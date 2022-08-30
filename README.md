@@ -22,6 +22,17 @@ This script takes a Pod name (running in the current context) and performs check
 - python 3 and [pip](https://pypi.org/project/pip/) installed
 - python requirements installed: `pip install -r requirements.txt`
 
+### Necessary project access
+
+The script can be run by a user with the [`Viewer`](https://cloud.google.com/iam/docs/understanding-roles#basic-definitions) role in the project.
+
+Alternatively, the user will need enough GKE cluster access to read Pods and ServiceAccounts, plus the following IAM permissions:
+
+- container.clusters.get
+- iam.serviceAccounts.get
+- iam.serviceAccounts.getIamPolicy
+- resourcemanager.projects.getIamPolicy
+
 ## Using the tool
 
 ```bash
