@@ -56,8 +56,8 @@ def check_cluster(project, location, cluster):
         'container', 'v1', cache_discovery=False)
     cluster_name = 'projects/%s/locations/%s/clusters/%s' % (
         project, location, cluster)
-    c = service.projects().zones().clusters().get(
-        projectId=project, zone=location, clusterId=cluster).execute()
+    c = service.projects().locations().clusters(
+            ).get(name=cluster_name).execute()
     try:
         wi_pool = c['workloadIdentityConfig']['workloadPool']
     except KeyError:
