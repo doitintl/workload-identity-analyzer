@@ -22,6 +22,19 @@ This script takes a Pod name (running in the current context) and performs check
 - python 3 and [pip](https://pypi.org/project/pip/) installed
 - python requirements installed: `pip install -r requirements.txt`
 
+### Necessary project access
+
+The script can be run by a user with the [`Viewer`](https://cloud.google.com/iam/docs/understanding-roles#basic-definitions) role in the project.
+
+Alternatively, the user will need enough GKE cluster access to read Pods and ServiceAccounts, plus the following IAM permissions:
+
+- container.clusters.get
+- iam.serviceAccounts.get
+- iam.serviceAccounts.getIamPolicy
+- resourcemanager.projects.getIamPolicy
+
+If the GSA is in a different GCP project than the GKE cluster, you'll need the last 3 permissions on that project instead.
+
 ## Using the tool
 
 ```bash
@@ -46,4 +59,4 @@ Pass a pod name to check - it can be part of a Deployment, Job, StatefulSet, etc
 
 ## TODO
 
-- Handle GSA in a GCP project different than KSA
+- Prettify (possibly colorize) output
