@@ -33,6 +33,8 @@ Alternatively, the user will need enough GKE cluster access to read Pods and Ser
 - iam.serviceAccounts.getIamPolicy
 - resourcemanager.projects.getIamPolicy
 
+If the GSA is in a different GCP project than the GKE cluster, you'll need the last 3 permissions on that project instead.
+
 ## Using the tool
 
 ```bash
@@ -56,5 +58,3 @@ Either configure the relevant [namespace for the current context](https://kubern
 Pass a pod name to check - it can be part of a Deployment, Job, StatefulSet, etc, but it has to be running already.
 
 ## TODO
-
-- Handle GSA in a GCP project different than KSA

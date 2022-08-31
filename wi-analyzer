@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import os
+import re
 import sys
 import argparse
 import logging
@@ -106,6 +107,17 @@ def check_ksa(v1, ksa, ns):
                  '/docs/how-to/workload-identity#authenticating_to)')
 
 
+def get_gsa_project(gsa, project):
+    # will try to extract the Project ID from GSA email
+    pattern = r'(?:.+@)(([a-z]|-){6,30})(?:\..+$)'
+    p = re.search(pattern, gsa)
+    if p:
+        gsa_project = p.groups()[0]
+        logger.info('GSA is in a different GCP project: %s' % gsa_project)
+        return gsa_project
+    return project
+
+
 def check_gsa(gsa, project, ksa, ns):
     service = googleapiclient.discovery.build(
         'iam', 'v1', cache_discovery=False)
@@ -165,8 +177,9 @@ def main():
     ksa, node = check_pod(v1, args, ns)
     check_node(v1, node)
     gsa = check_ksa(v1, ksa, ns)
-    check_gsa(gsa, project, ksa, ns)
-    check_gsa_project_roles(gsa, project)
+    gsa_project = get_gsa_project(gsa, project)
+    check_gsa(gsa, gsa_project, ksa, ns)
+    check_gsa_project_roles(gsa, gsa_project)
     logger.info('Workload Identity configured properly - '
                 'check if any IAM roles are missing from the list above')
 
