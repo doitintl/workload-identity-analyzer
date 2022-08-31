@@ -58,3 +58,5 @@ Either configure the relevant [namespace for the current context](https://kubern
 Pass a pod name to check - it can be part of a Deployment, Job, StatefulSet, etc, but it has to be running already.
 
 ## TODO
+
+- Prettify (possibly colorize) output
