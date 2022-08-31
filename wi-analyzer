@@ -57,8 +57,8 @@ def check_cluster(project, location, cluster):
         'container', 'v1', cache_discovery=False)
     cluster_name = 'projects/%s/locations/%s/clusters/%s' % (
         project, location, cluster)
-    c = service.projects().locations().clusters(
-            ).get(name=cluster_name).execute()
+    c = service.projects().locations().clusters().get(
+        name=cluster_name).execute()
     try:
         wi_pool = c['workloadIdentityConfig']['workloadPool']
     except KeyError:
@@ -69,13 +69,19 @@ def check_cluster(project, location, cluster):
 
 
 def check_pod(v1, args, ns):
-    pod = v1.read_namespaced_pod(args.pod, ns)
+    try:
+        pod = v1.read_namespaced_pod(args.pod, ns)
+    except client.exceptions.ApiException:
+        sys.exit('Pod "%s/%s" not found in current context' % (ns, args.pod))
     return pod.spec.service_account_name, pod.spec.node_name
 
 
 def check_node(v1, node):
     logger.info('Pod is running on node %s' % node)
-    n = v1.read_node(node)
+    try:
+        n = v1.read_node(node)
+    except client.exceptions.ApiException:
+        sys.exit('Node "%s" not found in cluster')
     try:
         if bool(n.metadata.labels['iam.gke.io/gke-metadata-server-enabled']):
             logger.info('GKE metadata server is enabled on node "%s"' % node)
@@ -92,7 +98,7 @@ def check_ksa(v1, ksa, ns):
     logger.info('Pod spec is using KSA "%s"' % ksa)
     try:
         k = v1.read_namespaced_service_account(ksa, ns)
-    except ApiException:
+    except client.exceptions.ApiException:
         sys.exit('Pod is configured to use KSA: '
                  '"%s/%s" but it does not exist.' % (ns, ksa))
     try:
