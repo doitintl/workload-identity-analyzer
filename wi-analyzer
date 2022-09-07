@@ -2,12 +2,12 @@
 
 import os
 import re
-import sys
 import argparse
 import logging
 import googleapiclient.discovery
-from googleapiclient.errors import HttpError
+from functools import wraps
 from kubernetes import client, config
+from googleapiclient.errors import HttpError
 
 
 def parse_args():
@@ -25,169 +25,325 @@ def init_logger(args):
     global logger
     level = logging.DEBUG if os.environ.get(
         'DEBUG', args.debug) else logging.INFO
-    logging.basicConfig(
-        level=level, format='%(asctime)s - %(levelname)s - %(message)s')
+    logging.basicConfig(level=level, format='%(message)s')
     logger = logging.getLogger()
 
 
-def get_gke_info(config):
-    try:
-        c = config.list_kube_config_contexts(
-        )[1]['context']['cluster'].split('_')
-        _, project, location, cluster = c
-    except:
-        sys.exit(
-            'GCP and GKE info could not be determined from current context')
-    return project, location, cluster
+class Reporter(object):
+    """This class represents an analysis reporter"""
+
+    def __init__(self):
+        super(Reporter, self).__init__()
+        self.entries = []
+
+    def check_decorator(msg):
+        def check_wrapper(func):
+            @wraps(func)
+            def report(*args, **kwargs):
+                if args[0].check_failed:
+                    skipped = True
+                    failed = False
+                else:
+                    skipped = False
+                    failed = func(*args, **kwargs)
+                args[0].reporter.add_entry(failed, skipped, msg)
+            return report
+        return check_wrapper
+
+    def add_entry(self, failed, skipped, msg):
+        if skipped:
+            status = '-'
+        elif failed:
+            status = 'X'
+        else:
+            status = 'V'
+        self.entries.append({
+            'status': status,
+            'message': msg
+        })
+
+    def is_passing(self):
+        return all([e['status'] == 'V' for e in self.entries])
+
+    def print_report(self, gke, project):
+        logger.info('Check results')
+        logger.info('---------------------------')
+        logger.info('V=Passed, X=Failed, -=Skipped\n')
+        for e in self.entries:
+            logger.info('[%s] %s' % (e['status'], e['message']))
+        logger.info('')
+        logger.info('GKE cluster info')
+        logger.info('---------------------------')
+        gke.print_info()
+        logger.info('')
+        logger.info('Google Service Account info')
+        logger.info('---------------------------')
+        project.print_info()
+        logger.info('')
+        if self.is_passing():
+            project.list_gsa_project_roles()
+            logger.info('Workload Identity configured properly - check '
+                        'if any IAM roles are missing from the list above')
 
 
-def get_ns(config, args):
-    if args.namespace:
-        return args.namespace
-    try:
-        return config.list_kube_config_contexts()[1]['context']['namespace']
-    except:
-        sys.exit(
-            'Namespace not passed as argument and could not '
-            'be determined from current context')
+class GkeCluster(object):
+    """This class represents a GKE Cluster"""
+
+    def __init__(self, args, reporter):
+        super(GkeCluster, self).__init__()
+        self.check_failed = False
+        self.args = args
+        self.reporter = reporter
+        self.cluster = None
+        self.cluster_name = None
+        self.gsa = None
+        self.ksa_name = None
+        self.ksa_name = None
+        self.location = None
+        self.namespace = None
+        self.node_name = None
+        self.project = None
+        self.node_label = 'iam.gke.io/gke-metadata-server-enabled'
+        self.ksa_annotation = 'iam.gke.io/gcp-service-account'
+        config.load_kube_config()
+        self.set_gke_info()
+        self.set_namespace()
+        self.v1 = client.CoreV1Api()
+
+    @Reporter.check_decorator('GCP project and GKE info '
+                              'determined from current context')
+    def set_gke_info(self):
+        try:
+            c = config.list_kube_config_contexts(
+            )[1]['context']['cluster'].split('_')
+            _, project, location, cluster = c
+            self.project = project
+            self.cluster_name = 'projects/%s/locations/%s/clusters/%s' % (
+                project, location, cluster)
+        except:
+            logger.error('Failed to get cluster info from current context\n')
+            self.check_failed = True
+        return self.check_failed
+
+    @Reporter.check_decorator('Namespace passed as argument,'
+                              'or determined from current context')
+    def set_namespace(self):
+        if self.args.namespace:
+            self.namespace = self.args.namespace
+        try:
+            self.namespace = config.list_kube_config_contexts()[
+                1]['context']['namespace']
+        except:
+            logger.error('Failed to get NS from current context\n')
+            self.check_failed = True
+        return self.check_failed
+
+    def get_gsa(self):
+        return self.gsa
+
+    def get_project(self):
+        return self.project
+
+    def get_ksa_string(self):
+        return 'serviceAccount:%s.svc.id.goog[%s/%s]' % (
+            self.project, self.namespace, self.ksa_name)
+
+    def get_check_status(self):
+        return self.check_failed
+
+    def print_info(self):
+        if self.cluster_name:
+            logger.info('Cluster: "%s"' % self.cluster_name)
+            logger.info('Workload: "%s/%s" running on Node: "%s"' %
+                        (self.namespace, self.args.pod, self.node_name))
+            logger.info('KSA name: "%s"' % self.ksa_name)
+        else:
+            logger.info('Cluster info could not be determined, '
+                        'is your current context set correctly?')
+
+    @Reporter.check_decorator('Workload Identity enabled on GKE Cluster')
+    def check_cluster(self):
+        service = googleapiclient.discovery.build(
+            'container', 'v1', cache_discovery=False)
+        c = service.projects().locations().clusters().get(
+            name=self.cluster_name).execute()
+        try:
+            wi_pool = c['workloadIdentityConfig']['workloadPool']
+        except KeyError:
+            self.check_failed = True
+        return self.check_failed
+
+    @Reporter.check_decorator('Pod found in current context')
+    def check_pod(self):
+        try:
+            pod = self.v1.read_namespaced_pod(self.args.pod, self.namespace)
+            self.ksa_name = pod.spec.service_account_name
+            self.node_name = pod.spec.node_name
+        except client.exceptions.ApiException:
+            logger.error('Failed to find pod %s/%s in current context\n' %
+                         (self.namespace, slef.args.pod))
+            self.check_failed = True
+        return self.check_failed
+
+    @Reporter.check_decorator('GKE Node found in the cluster')
+    def check_node(self):
+        logger.debug('Pod is running on node %s' % self.node_name)
+        try:
+            n = self.v1.read_node(self.node_name)
+            self.node = n
+        except client.exceptions.ApiException:
+            logger.error('Failed to get Node %s from the API\n' %
+                         self.node_name)
+            self.check_failed = True
+        return self.check_failed
+
+    @Reporter.check_decorator('Workload Identity enabled on Node Pool')
+    def check_node_labels(self):
+        try:
+            if not bool(self.node.metadata.labels[self.node_label]):
+                self.check_failed = True
+        except KeyError:
+            self.check_failed = True
+        return self.check_failed
+
+    @Reporter.check_decorator('KSA found in the cluster')
+    def check_ksa(self):
+        logger.debug('Pod spec is using KSA "%s"' % self.ksa_name)
+        try:
+            self.ksa = self.v1.read_namespaced_service_account(
+                self.ksa_name, self.namespace)
+        except client.exceptions.ApiException:
+            logger.error('Failed to get KSA %s from the API\n' % self.ksa_name)
+            self.check_failed = True
+        return self.check_failed
+
+    @Reporter.check_decorator('KSA Workload Identity annotation set correctly')
+    def check_ksa_annotation(self):
+        try:
+            gsa = self.ksa.metadata.annotations[self.ksa_annotation]
+            self.gsa = gsa
+        except (TypeError, KeyError):
+            self.check_failed = True
+        return self.check_failed
 
 
-def check_cluster(project, location, cluster):
-    service = googleapiclient.discovery.build(
-        'container', 'v1', cache_discovery=False)
-    cluster_name = 'projects/%s/locations/%s/clusters/%s' % (
-        project, location, cluster)
-    c = service.projects().locations().clusters().get(
-        name=cluster_name).execute()
-    try:
-        wi_pool = c['workloadIdentityConfig']['workloadPool']
-    except KeyError:
-        sys.exit('Workload Identity not enabled on cluster "%s"' %
-                 cluster_name)
-    logger.info('Cluster "%s" has Workload Identity enabled '
-                '(pool name: %s)' % (cluster_name, wi_pool))
+class GcpProject(object):
+    """This class represents a GCP Project"""
 
+    def __init__(self, reporter, gsa, ksa_string, project, check_failed):
+        super(GcpProject, self).__init__()
+        self.check_failed = check_failed
+        self.reporter = reporter
+        self.gsa = gsa
+        self.ksa_string = ksa_string
+        self.set_project(project)
+        self.gsa_link = 'projects/%s/serviceAccounts/%s' % (
+            self.project, self.gsa)
+        self.wi_users = []
+        self.iam = googleapiclient.discovery.build(
+            'iam', 'v1', cache_discovery=False)
 
-def check_pod(v1, args, ns):
-    try:
-        pod = v1.read_namespaced_pod(args.pod, ns)
-    except client.exceptions.ApiException:
-        sys.exit('Pod "%s/%s" not found in current context' % (ns, args.pod))
-    return pod.spec.service_account_name, pod.spec.node_name
+    def set_project(self, project):
+        # will try to extract the Project ID from GSA email
+        pattern = r'(?:.+@)(([a-z]|-){6,30})(?:iam\.gserviceaccount\.com$)'
+        try:
+            p = re.search(pattern, self.gsa)
+        except TypeError:
+            p = None
+        if p:
+            gsa_project = p.groups()[0]
+            logger.debug('GSA is in a different GCP project: %s' % gsa_project)
+            self.project = gsa_project
+        else:
+            self.project = project
 
+    def print_info(self):
+        if self.gsa:
+            logger.info('Google Service Account: "%s"' % self.gsa_link)
+            logger.info('Has the following Workload Identity Users:\n%s' %
+                        '\n'.join(self.wi_users))
+        else:
+            logger.info('Google Service Account information could '
+                        'not be determined, fix previous issues')
 
-def check_node(v1, node):
-    logger.info('Pod is running on node %s' % node)
-    try:
-        n = v1.read_node(node)
-    except client.exceptions.ApiException:
-        sys.exit('Node "%s" not found in cluster')
-    try:
-        if bool(n.metadata.labels['iam.gke.io/gke-metadata-server-enabled']):
-            logger.info('GKE metadata server is enabled on node "%s"' % node)
-            return
-    except KeyError:
-        pass
-    sys.exit('Workload is running on a node pool that is '
-             'not Workload Identity enabled\n'
-             'https://cloud.google.com/kubernetes-engine/docs/'
-             'how-to/workload-identity#option_2_node_pool_modification')
+    @Reporter.check_decorator('GSA found in GCP project')
+    def check_gsa(self):
+        try:
+            self.gsa_status = self.iam.projects().serviceAccounts().get(
+                name=self.gsa_link).execute()
+        except HttpError:
+            logger.error('Failed to get GSA %s\n' % self.gsa_link)
+            self.check_failed = True
+        return self.check_failed
 
+    @Reporter.check_decorator('GSA is enabled')
+    def check_gsa_enabled(self):
+        if self.gsa_status.get('disabled'):
+            self.check_failed = True
+        return self.check_failed
 
-def check_ksa(v1, ksa, ns):
-    logger.info('Pod spec is using KSA "%s"' % ksa)
-    try:
-        k = v1.read_namespaced_service_account(ksa, ns)
-    except client.exceptions.ApiException:
-        sys.exit('Pod is configured to use KSA: '
-                 '"%s/%s" but it does not exist.' % (ns, ksa))
-    try:
-        gsa = k.metadata.annotations['iam.gke.io/gcp-service-account']
-        logger.info('Kubernetes Service Account is configured '
-                    'to use Google Service Account "%s"' % gsa)
-        return gsa
-    except (TypeError, KeyError):
-        sys.exit('Kubernetes Service Account is missing annotation: '
-                 '"iam.gke.io/gcp-service-account"\n'
-                 '(step 7 of: https://cloud.google.com/kubernetes-engine'
-                 '/docs/how-to/workload-identity#authenticating_to)')
+    @Reporter.check_decorator('GSA has Workload Identity users configured')
+    def check_gsa_iam_policy(self):
+        gsa_policy = self.iam.projects().serviceAccounts().getIamPolicy(
+            resource=self.gsa_link).execute()
+        try:
+            self.wi_users = [
+                b['members'] for b in gsa_policy['bindings']
+                if b['role'] == 'roles/iam.workloadIdentityUser'][0]
+        except (IndexError, KeyError):
+            self.check_failed = True
+        return self.check_failed
 
+    @Reporter.check_decorator('GSA does not have KSA '
+                              'as a Workload Identity user')
+    def check_gsa_ksa_workload_identity_user(self):
+        if self.ksa_string not in self.wi_users:
+            self.check_failed = True
+        return self.check_failed
 
-def get_gsa_project(gsa, project):
-    # will try to extract the Project ID from GSA email
-    pattern = r'(?:.+@)(([a-z]|-){6,30})(?:\..+$)'
-    p = re.search(pattern, gsa)
-    if p:
-        gsa_project = p.groups()[0]
-        logger.info('GSA is in a different GCP project: %s' % gsa_project)
-        return gsa_project
-    return project
-
-
-def check_gsa(gsa, project, ksa, ns):
-    service = googleapiclient.discovery.build(
-        'iam', 'v1', cache_discovery=False)
-    gsa_name = 'projects/%s/serviceAccounts/%s' % (project, gsa)
-    try:
-        gsa_status = service.projects().serviceAccounts().get(
-            name=gsa_name).execute()
-    except HttpError:
-        sys.exit('GSA "%s" does not exist in project "%s"' % (gsa, project))
-    if gsa_status.get('disabled'):
-        sys.exit('GSA "%s" is disabled in project %s\n'
-                 'https://console.cloud.google.com/iam-admin/'
-                 'serviceaccounts/details/%s?project=%s' % (
-                     gsa, project, gsa_status['uniqueId'], project))
-    gsa_policy = service.projects().serviceAccounts().getIamPolicy(
-        resource=gsa_name).execute()
-    try:
-        wi_users = [b['members'] for b in gsa_policy['bindings']
-                    if b['role'] == 'roles/iam.workloadIdentityUser'][0]
-    except (IndexError, KeyError):
-        sys.exit('GSA "%s" does not have workload identity users configured\n'
-                 '(step 6: https://cloud.google.com/kubernetes-engine/'
-                 'docs/how-to/workload-identity#authenticating_to)' % gsa)
-    user_string = 'serviceAccount:%s.svc.id.goog[%s/%s]' % (
-        project, ns, ksa)
-    if user_string not in wi_users:
-        sys.exit('GSA "%s" is missing "%s" as a workload identity user\n'
-                 '(step 6: https://cloud.google.com/kubernetes-engine'
-                 '/docs/how-to/workload-identity#authenticating_to)'
-                 % (gsa, user_string))
-    logger.info('GSA "%s" has user "%s" configured correctly as a '
-                'workload identity user' % (gsa, user_string))
-
-
-def check_gsa_project_roles(gsa, project):
-    service = googleapiclient.discovery.build(
-        'cloudresourcemanager', 'v1', cache_discovery=False
-    )
-    project_policy = service.projects(
-    ).getIamPolicy(resource=project).execute()
-    gsa_roles = [b['role'] for b in project_policy['bindings']
-                 if 'serviceAccount:%s' % gsa in b['members']]
-    logger.debug(project_policy)
-    logger.info('GSA: "%s" has the following roles in project "%s":\n%s' %
-                (gsa, project, '\n'.join(gsa_roles)))
+    def list_gsa_project_roles(self):
+        service = googleapiclient.discovery.build(
+            'cloudresourcemanager', 'v1', cache_discovery=False
+        )
+        project_policy = service.projects(
+        ).getIamPolicy(resource=self.project).execute()
+        gsa_roles = [b['role'] for b in project_policy['bindings']
+                     if 'serviceAccount:%s' % self.gsa in b['members']]
+        logger.debug(project_policy)
+        if gsa_roles:
+            logger.info('GSA: "%s" has the following roles '
+                        'in project "%s":\n%s' %
+                        (self.gsa, self.project, '\n'.join(gsa_roles)))
+        else:
+            logger.error('GSA: "%s" has no permissions in project "%s"\n' % (
+                self.gsa, self.project))
 
 
 def main():
     args = parse_args()
     init_logger(args)
     logger.debug(args)
-    config.load_kube_config()
-    project, location, cluster = get_gke_info(config)
-    check_cluster(project, location, cluster)
-    ns = get_ns(config, args)
-    v1 = client.CoreV1Api()
-    ksa, node = check_pod(v1, args, ns)
-    check_node(v1, node)
-    gsa = check_ksa(v1, ksa, ns)
-    gsa_project = get_gsa_project(gsa, project)
-    check_gsa(gsa, gsa_project, ksa, ns)
-    check_gsa_project_roles(gsa, gsa_project)
-    logger.info('Workload Identity configured properly - '
-                'check if any IAM roles are missing from the list above')
+    reporter = Reporter()
+
+    gke = GkeCluster(args, reporter)
+    gke.check_cluster()
+    gke.check_pod()
+    gke.check_node()
+    gke.check_node_labels()
+    gke.check_ksa()
+    gke.check_ksa_annotation()
+
+    project = GcpProject(
+        reporter, gke.get_gsa(),
+        gke.get_ksa_string(),
+        gke.get_project(),
+        gke.get_check_status())
+    project.check_gsa()
+    project.check_gsa_enabled()
+    project.check_gsa_iam_policy()
+    project.check_gsa_ksa_workload_identity_user()
+
+    reporter.print_report(gke, project)
 
 
 if __name__ == '__main__':
