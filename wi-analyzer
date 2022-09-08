@@ -42,11 +42,10 @@ class Reporter(object):
             def report(*args, **kwargs):
                 if args[0].check_failed:
                     skipped = True
-                    failed = False
                 else:
                     skipped = False
-                    failed = func(*args, **kwargs)
-                args[0].reporter.add_entry(failed, skipped, msg)
+                    func(*args, **kwargs)
+                args[0].reporter.add_entry(args[0].check_failed, skipped, msg)
             return report
         return check_wrapper
 
@@ -123,7 +122,6 @@ class GkeCluster(object):
         except:
             logger.error('Failed to get cluster info from current context\n')
             self.check_failed = True
-        return self.check_failed
 
     @Reporter.check_decorator('Namespace passed as argument,'
                               'or determined from current context')
@@ -136,7 +134,6 @@ class GkeCluster(object):
         except:
             logger.error('Failed to get NS from current context\n')
             self.check_failed = True
-        return self.check_failed
 
     def get_gsa(self):
         return self.gsa
@@ -171,7 +168,6 @@ class GkeCluster(object):
             wi_pool = c['workloadIdentityConfig']['workloadPool']
         except KeyError:
             self.check_failed = True
-        return self.check_failed
 
     @Reporter.check_decorator('Pod found in current context')
     def check_pod(self):
@@ -183,7 +179,6 @@ class GkeCluster(object):
             logger.error('Failed to find pod %s/%s in current context\n' %
                          (self.namespace, slef.args.pod))
             self.check_failed = True
-        return self.check_failed
 
     @Reporter.check_decorator('GKE Node found in the cluster')
     def check_node(self):
@@ -195,7 +190,6 @@ class GkeCluster(object):
             logger.error('Failed to get Node %s from the API\n' %
                          self.node_name)
             self.check_failed = True
-        return self.check_failed
 
     @Reporter.check_decorator('Workload Identity enabled on Node Pool')
     def check_node_labels(self):
@@ -204,7 +198,6 @@ class GkeCluster(object):
                 self.check_failed = True
         except KeyError:
             self.check_failed = True
-        return self.check_failed
 
     @Reporter.check_decorator('KSA found in the cluster')
     def check_ksa(self):
@@ -215,7 +208,6 @@ class GkeCluster(object):
         except client.exceptions.ApiException:
             logger.error('Failed to get KSA %s from the API\n' % self.ksa_name)
             self.check_failed = True
-        return self.check_failed
 
     @Reporter.check_decorator('KSA Workload Identity annotation set correctly')
     def check_ksa_annotation(self):
@@ -224,7 +216,6 @@ class GkeCluster(object):
             self.gsa = gsa
         except (TypeError, KeyError):
             self.check_failed = True
-        return self.check_failed
 
 
 class GcpProject(object):
@@ -274,13 +265,11 @@ class GcpProject(object):
         except HttpError:
             logger.error('Failed to get GSA %s\n' % self.gsa_link)
             self.check_failed = True
-        return self.check_failed
 
     @Reporter.check_decorator('GSA is enabled')
     def check_gsa_enabled(self):
         if self.gsa_status.get('disabled'):
             self.check_failed = True
-        return self.check_failed
 
     @Reporter.check_decorator('GSA has Workload Identity users configured')
     def check_gsa_iam_policy(self):
@@ -292,14 +281,12 @@ class GcpProject(object):
                 if b['role'] == 'roles/iam.workloadIdentityUser'][0]
         except (IndexError, KeyError):
             self.check_failed = True
-        return self.check_failed
 
     @Reporter.check_decorator('GSA does not have KSA '
                               'as a Workload Identity user')
     def check_gsa_ksa_workload_identity_user(self):
         if self.ksa_string not in self.wi_users:
             self.check_failed = True
-        return self.check_failed
 
     def list_gsa_project_roles(self):
         service = googleapiclient.discovery.build(
