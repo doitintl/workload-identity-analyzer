@@ -85,25 +85,24 @@ class Reporter(object):
                         'if any IAM roles are missing from the list above')
 
 
-class GkeCluster(object):
-    """This class represents a GKE Cluster"""
+class GkeWorkload(object):
+    """This class represents a workload running in GKE"""
+    node_label = 'iam.gke.io/gke-metadata-server-enabled'
+    ksa_annotation = 'iam.gke.io/gcp-service-account'
 
     def __init__(self, args, reporter):
-        super(GkeCluster, self).__init__()
-        self.check_failed = False
+        super(GkeWorkload, self).__init__()
         self.args = args
         self.reporter = reporter
+        self.check_failed = False
         self.cluster = None
         self.cluster_name = None
         self.gsa = None
         self.ksa_name = None
-        self.ksa_name = None
-        self.location = None
         self.namespace = None
+        self.node = None
         self.node_name = None
         self.project = None
-        self.node_label = 'iam.gke.io/gke-metadata-server-enabled'
-        self.ksa_annotation = 'iam.gke.io/gcp-service-account'
         config.load_kube_config()
         self.set_gke_info()
         self.set_namespace()
@@ -218,23 +217,24 @@ class GkeCluster(object):
             self.check_failed = True
 
 
-class GcpProject(object):
-    """This class represents a GCP Project"""
+class GsaProject(object):
+    """This class represents a GCP Project in which a GSA resides"""
 
     def __init__(self, reporter, gsa, ksa_string, project, check_failed):
-        super(GcpProject, self).__init__()
+        super(GsaProject, self).__init__()
         self.check_failed = check_failed
         self.reporter = reporter
         self.gsa = gsa
         self.ksa_string = ksa_string
-        self.set_project(project)
+        self.project = self.get_project(project)
         self.gsa_link = 'projects/%s/serviceAccounts/%s' % (
             self.project, self.gsa)
+        self.gsa_status = None
         self.wi_users = []
         self.iam = googleapiclient.discovery.build(
             'iam', 'v1', cache_discovery=False)
 
-    def set_project(self, project):
+    def get_project(self, project):
         # will try to extract the Project ID from GSA email
         pattern = r'(?:.+@)(([a-z]|-){6,30})(?:iam\.gserviceaccount\.com$)'
         try:
@@ -244,9 +244,9 @@ class GcpProject(object):
         if p:
             gsa_project = p.groups()[0]
             logger.debug('GSA is in a different GCP project: %s' % gsa_project)
-            self.project = gsa_project
+            return gsa_project
         else:
-            self.project = project
+            return project
 
     def print_info(self):
         if self.gsa:
@@ -312,7 +312,7 @@ def main():
     logger.debug(args)
     reporter = Reporter()
 
-    gke = GkeCluster(args, reporter)
+    gke = GkeWorkload(args, reporter)
     gke.check_cluster()
     gke.check_pod()
     gke.check_node()
@@ -320,7 +320,7 @@ def main():
     gke.check_ksa()
     gke.check_ksa_annotation()
 
-    project = GcpProject(
+    project = GsaProject(
         reporter, gke.get_gsa(),
         gke.get_ksa_string(),
         gke.get_project(),
