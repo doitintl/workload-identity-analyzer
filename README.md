@@ -57,3 +57,9 @@ Configure your current context to point at the cluster where the workload is run
 Either configure the relevant [namespace for the current context](https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/#setting-the-namespace-preference) or pass the namespace name using the `-n` flag.
 
 Pass a pod name to check - it can be part of a Deployment, Job, StatefulSet, etc, but it has to be running already.
+
+
+## TODO
+
+- Add tests
+- Add build and release assets
