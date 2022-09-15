@@ -26,7 +26,7 @@ def init_logger(args):
     level = logging.DEBUG if os.environ.get(
         'DEBUG', args.debug) else logging.INFO
     logging.basicConfig(level=level, format='%(message)s')
-    logger = logging.getLogger()
+    logger = logging.getLogger(name='analyzer')
 
 
 class Reporter(object):
@@ -104,8 +104,9 @@ class GkeWorkload(object):
         self.node_name = None
         self.project = None
         config.load_kube_config()
-        self.set_gke_info()
-        self.set_namespace()
+        if __name__ == '__main__':
+            self.set_gke_info()
+            self.set_namespace()
         self.v1 = client.CoreV1Api()
 
     @Reporter.check_decorator('GCP project and GKE info '
@@ -176,7 +177,7 @@ class GkeWorkload(object):
             self.node_name = pod.spec.node_name
         except client.exceptions.ApiException:
             logger.error('Failed to find pod %s/%s in current context\n' %
-                         (self.namespace, slef.args.pod))
+                         (self.namespace, self.args.pod))
             self.check_failed = True
 
     @Reporter.check_decorator('GKE Node found in the cluster')
@@ -236,7 +237,7 @@ class GsaProject(object):
 
     def get_project(self, project):
         # will try to extract the Project ID from GSA email
-        pattern = r'(?:.+@)(([a-z]|-){6,30})(?:iam\.gserviceaccount\.com$)'
+        pattern = r'(?:.+@)(([a-z]|-){6,30})(?:\.iam\.gserviceaccount\.com$)'
         try:
             p = re.search(pattern, self.gsa)
         except TypeError:
