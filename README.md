@@ -61,5 +61,4 @@ Pass a pod name to check - it can be part of a Deployment, Job, StatefulSet, etc
 
 ## TODO
 
-- Add tests
 - Add build and release assets
