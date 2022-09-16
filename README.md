@@ -12,6 +12,7 @@ This script takes a Pod name (running in the current context) and performs check
 - KSA has `roles/iam.workloadIdentityUser` on the GSA
 - GSA IAM roles in the project
 
+[![Supported Versions](https://img.shields.io/pypi/pyversions/wi-analyzer.svg)](https://pypi.org/project/wi-analyzer)
 
 ## Prerequisites
 
@@ -20,7 +21,15 @@ This script takes a Pod name (running in the current context) and performs check
 - [`kubectl`](https://cloud.google.com/kubernetes-engine/docs/how-to/cluster-access-for-kubectl) installed and configured with cluster access
 - [current kubectl context](https://kubernetes.io/docs/tasks/access-application-cluster/configure-access-multiple-clusters/#define-clusters-users-and-contexts) pointing to the relevant cluster
 - python 3 and [pip](https://pypi.org/project/pip/) installed
-- python requirements installed: `pip install -r requirements.txt`
+- if running from source, python requirements installed: `pip install -r requirements.txt`
+
+## Installation
+
+This package is published to [PyPI](https://pypi.org/project/wi-analyzer/) and can be installed using `pip`:
+
+```bash
+pip install wi-analyzer
+```
 
 ### Necessary project access
 
@@ -38,7 +47,7 @@ If the GSA is in a different GCP project than the GKE cluster, you'll need the l
 ## Using the tool
 
 ```bash
-$ ./wi-analyzer --help
+$ wi-analyzer --help
 usage: wi-analyzer [-h] [-n NAMESPACE] [-d] pod
 
 GKE Workload Identity Analyzer
@@ -57,8 +66,3 @@ Configure your current context to point at the cluster where the workload is run
 Either configure the relevant [namespace for the current context](https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/#setting-the-namespace-preference) or pass the namespace name using the `-n` flag.
 
 Pass a pod name to check - it can be part of a Deployment, Job, StatefulSet, etc, but it has to be running already.
-
-
-## TODO
-
-- Add build and release assets
