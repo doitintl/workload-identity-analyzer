@@ -15,7 +15,8 @@ class GkeWorkloadTestCase(unittest.TestCase):
                 'namespace': NAMESPACE}}
 
     @classmethod
-    def setUpClass(self):
+    @patch('kubernetes.config.load_kube_config')
+    def setUpClass(self, mock_load_kube_config):
         args = parse_args()
         init_logger(args)
         self.gkeWorkload = GkeWorkload(args, Reporter())
