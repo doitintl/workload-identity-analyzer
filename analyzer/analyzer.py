@@ -104,9 +104,8 @@ class GkeWorkload(object):
         self.node_name = None
         self.project = None
         config.load_kube_config()
-        if __name__ == '__main__':
-            self.set_gke_info()
-            self.set_namespace()
+        self.set_gke_info()
+        self.set_namespace()
         self.v1 = client.CoreV1Api()
 
     @Reporter.check_decorator('GCP project and GKE info '
@@ -128,6 +127,7 @@ class GkeWorkload(object):
     def set_namespace(self):
         if self.args.namespace:
             self.namespace = self.args.namespace
+            return
         try:
             self.namespace = config.list_kube_config_contexts()[
                 1]['context']['namespace']
