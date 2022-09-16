@@ -15,15 +15,13 @@ class GkeWorkloadTestCase(unittest.TestCase):
                 'namespace': NAMESPACE}}
 
     @classmethod
-    @patch('kubernetes.config.load_kube_config')
-    def setUpClass(self, mock_load_kube_config):
+    def setUpClass(self):
         args = parse_args()
         init_logger(args)
-        self.gkeWorkload = GkeWorkload(args, Reporter())
-        with patch('kubernetes.config.list_kube_config_contexts',
-                   return_value=({}, self.CONTEXT)):
-            self.gkeWorkload.set_gke_info()
-            self.gkeWorkload.set_namespace()
+        with patch('kubernetes.config.load_kube_config'):
+            with patch('kubernetes.config.list_kube_config_contexts',
+                       return_value=({}, self.CONTEXT)):
+                self.gkeWorkload = GkeWorkload(args, Reporter())
 
     def setUp(self):
         self.gkeWorkload.check_failed = False
