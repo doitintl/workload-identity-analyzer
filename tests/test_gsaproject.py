@@ -1,6 +1,6 @@
 import unittest
 from unittest.mock import MagicMock, patch
-from analyzer import GsaProject, Reporter, parse_args, init_logger
+from analyzer.analyzer import GsaProject, Reporter, parse_args, init_logger
 
 
 @patch('googleapiclient.discovery.build')

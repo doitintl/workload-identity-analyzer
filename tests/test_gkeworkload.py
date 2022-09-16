@@ -1,6 +1,6 @@
 import unittest
 from unittest.mock import MagicMock, patch
-from analyzer import GkeWorkload, Reporter, parse_args, init_logger
+from analyzer.analyzer import GkeWorkload, Reporter, parse_args, init_logger
 
 
 class GkeWorkloadTestCase(unittest.TestCase):
