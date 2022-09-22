@@ -59,6 +59,12 @@ options:
   -h, --help            show this help message and exit
   -n NAMESPACE, --namespace NAMESPACE
                         Kubernetes Namespace to run in
+  -p PROJECT, --project PROJECT
+                        GCP Project holding the cluster
+  -l LOCATION, --location LOCATION
+                        The GCP location of the cluster
+  -c CLUSTER, --cluster CLUSTER
+                        The name of the cluster
   -d, --debug           Enable debug logging
 ```
 
@@ -66,3 +72,7 @@ Configure your current context to point at the cluster where the workload is run
 Either configure the relevant [namespace for the current context](https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/#setting-the-namespace-preference) or pass the namespace name using the `-n` flag.
 
 Pass a pod name to check - it can be part of a Deployment, Job, StatefulSet, etc, but it has to be running already.
+
+## TODO
+
+- Support [Fleet Workload Identity](https://cloud.google.com/anthos/fleet-management/docs/use-workload-identity) (GKE WI for Anthos)
