@@ -16,9 +16,21 @@ def parse_args():
     parser.add_argument('pod', help='Kubernetes Pod name to check', type=str)
     parser.add_argument('-n', '--namespace',
                         help='Kubernetes Namespace to run in', type=str)
+    parser.add_argument('-p', '--project',
+                        help='GCP Project holding the cluster', type=str)
+    parser.add_argument('-l', '--location',
+                        help='The GCP location of the cluster', type=str)
+    parser.add_argument('-c', '--cluster',
+                        help='The name of the cluster', type=str)
     parser.add_argument('-d', '--debug', help='Enable debug logging',
                         action='store_true')
-    return parser.parse_args()
+    args = parser.parse_args()
+    inclusive_group = [args.project, args.location, args.cluster]
+    if (all(v is not None for v in inclusive_group) or
+            all(v is None for v in inclusive_group)):
+        return args
+    parser.error(
+        'Either set all, or none of: "PROJECT", "LOCATION", "CLUSTER"')
 
 
 def init_logger(args):
@@ -111,6 +123,12 @@ class GkeWorkload(object):
     @Reporter.check_decorator('GCP project and GKE info '
                               'determined from current context')
     def set_gke_info(self):
+        if self.args.project:
+            self.project = self.args.project
+            self.location = self.args.location
+            self.cluster_name = 'projects/%s/locations/%s/clusters/%s' % (
+                self.args.project, self.args.location, self.args.cluster)
+            return
         try:
             c = config.list_kube_config_contexts(
             )[1]['context']['cluster'].split('_')
@@ -119,7 +137,8 @@ class GkeWorkload(object):
             self.cluster_name = 'projects/%s/locations/%s/clusters/%s' % (
                 project, location, cluster)
         except:
-            logger.error('Failed to get cluster info from current context\n')
+            logger.error('Failed to get cluster info from current context, '
+                         'or it was not passed as arguments\n')
             self.check_failed = True
 
     @Reporter.check_decorator('Namespace passed as argument,'
