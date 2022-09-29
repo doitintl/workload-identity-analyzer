@@ -1,6 +1,8 @@
 import unittest
 from unittest.mock import MagicMock, patch
-from analyzer.analyzer import GsaProject, Reporter, parse_args, init_logger
+from gsa import GsaProject
+from analyzer import parse_args, init_logger
+from reporter import Reporter
 
 
 @patch('googleapiclient.discovery.build')
@@ -106,10 +108,10 @@ class GsaProjectTestCase(unittest.TestCase):
                      'members': ['serviceAccount:testMember']}
                 ]
             }
-        with self.assertLogs('analyzer') as cm:
+        with self.assertLogs() as cm:
             gsaProject.list_gsa_project_roles()
         self.assertEqual(cm.output, [
-                         'INFO:analyzer:GSA: "testMember" has the following '
+                         'INFO:root:GSA: "testMember" has the following '
                          'roles in project "test-project":'
                          '\nroles/viewer\nroles/editor'])
 
