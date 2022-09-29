@@ -17,7 +17,7 @@ keywords = ['gke', 'workload-identity']
 dynamic = ['version', 'dependencies']
 
 [project.scripts]
-wi-analyzer = 'analyzer.analyzer:main'
+wi-analyzer = 'analyzer:main'
 
 [tool.setuptools.dynamic]
 dependencies = {file = 'requirements.txt'}
