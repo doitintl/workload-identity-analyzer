@@ -1,5 +1,5 @@
 venv-create:
-	pip install venv
+	pip install virtualenv
 	python3 -m venv venv
 
 venv-activate:
