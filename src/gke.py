@@ -143,3 +143,94 @@ class GkeWorkload(object):
             self.gsa = gsa
         except (TypeError, KeyError):
             self.check_failed = True
+
+class FleetWorkload(GkeWorkload):
+    """docstring for FleetWorkload"""
+
+    def __init__(self, args, reporter):
+        super(FleetWorkload, self).__init__(args, reporter)
+
+    @Reporter.check_decorator('Could not find WI pool/Identity provider '
+                              'info on GKE Fleet Membership')
+    def check_cluster(self):
+        self.membership_name = self.cluster_name.replace(
+            'clusters', 'memberships')
+        service = googleapiclient.discovery.build(
+            'gkehub', 'v1', cache_discovery=False)
+        m = service.projects().locations().memberships().get(
+            name=self.membership_name).execute()
+        try:
+            self.wi_pool = m['authority']['workloadIdentityPool']
+            self.idp = m['authority']['identityProvider']
+        except KeyError:
+            self.check_failed = True
+
+    @Reporter.check_decorator('Pod found in current context')
+    def check_pod(self):
+        try:
+            self.pod = self.v1.read_namespaced_pod(
+                self.args.pod, self.namespace)
+            self.ksa_name = self.pod.spec.service_account_name
+        except client.exceptions.ApiException:
+            logger.error('Failed to find pod %s/%s in current context\n' %
+                         (self.namespace, self.args.pod))
+            self.check_failed = True
+
+    @Reporter.check_decorator('WI projected KSA volume found in pod spec')
+    def check_volume_wi(self):
+        try:
+            volumes = [v for v in self.pod.spec.volumes
+                       if hasattr(v.projected, 'sources')]
+            self.volume = [volume for volume in volumes
+                           for s in volume.projected.sources
+                           if hasattr(s.service_account_token, 'audience') and
+                           s.service_account_token.audience == self.wi_pool][0]
+            self.volume_name = self.volume.name
+            self.ksa_token_path = [source.service_account_token for source
+                                   in self.volume.projected.sources
+                                   if source.service_account_token][0].path
+            logger.debug(self.volume)
+        except (AttributeError, KeyError):
+            logger.error('Pod spec is missing the projected GCP '
+                         'Workload Identity KSA volume\n')
+            self.check_failed = True
+
+    @Reporter.check_decorator('WI projected KSA volume has ConfigMap source\n')
+    def check_volume_cm(self):
+        try:
+            self.cm = [source.config_map for source in
+                       self.volume.projected.sources if source.config_map][0]
+            logger.debug(self.cm)
+        except (AttributeError, KeyError):
+            logger.error('ConfigMap source is missing from the projected '
+                         'GCP Workload Identity KSA volume\n')
+            self.check_failed = True
+
+    @Reporter.check_decorator('Pod spec has container/s with the '
+                              'KSA volume mounted')
+    def check_container_volume_mounts(self):
+        try:
+            self.containers = [container for container in
+                               self.pod.spec.containers for vm in
+                               container.volume_mounts if hasattr(vm, 'name')
+                               and vm.name == self.volume.name]
+            logger.debug(self.containers)
+            # assuming that all containers mount the KSA in the same path
+            self.base_mount_path = [vm.mount_path for vm in
+                                    self.containers[0].volume_mounts
+                                    if vm.name == self.volume_name][0]
+            logger.debug(self.base_mount_path)
+        except (AttributeError, KeyError):
+            logger.error('None of the pod containers '
+                         'mounts the WI KSA volume\n')
+            self.check_failed = True
+
+    @Reporter.check_decorator('WI KSA volume found in pod spec')
+    def check_configmap(self):
+        # check client json configmap
+        pass
+
+    @Reporter.check_decorator('"GOOGLE_APPLICATION_CREDENTIALS" environment '
+                              'variable set correctly')
+    def check_env_variable(self):
+        pass

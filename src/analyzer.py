@@ -3,7 +3,7 @@
 import os
 import argparse
 import logging
-from gke import GkeWorkload
+from gke import GkeWorkload, FleetWorkload
 from gsa import GsaProject
 from reporter import Reporter
 
@@ -44,25 +44,32 @@ def main():
     logger.debug(args)
     reporter = Reporter()
 
-    gke = GkeWorkload(args, reporter)
-    gke.check_cluster()
-    gke.check_pod()
-    gke.check_node()
-    gke.check_node_labels()
-    gke.check_ksa()
-    gke.check_ksa_annotation()
+    fleet = FleetWorkload(args, reporter)
+    fleet.check_cluster()
+    fleet.check_pod()
+    fleet.check_volume_wi()
+    fleet.check_volume_cm()
+    fleet.check_container_volume_mounts()
 
-    project = GsaProject(
-        reporter, gke.get_gsa(),
-        gke.get_ksa_string(),
-        gke.get_project(),
-        gke.get_check_status())
-    project.check_gsa()
-    project.check_gsa_enabled()
-    project.check_gsa_iam_policy()
-    project.check_gsa_ksa_workload_identity_user()
+    # gke = GkeWorkload(args, reporter)
+    # gke.check_cluster()
+    # gke.check_pod()
+    # gke.check_node()
+    # gke.check_node_labels()
+    # gke.check_ksa()
+    # gke.check_ksa_annotation()
 
-    reporter.print_report(gke, project)
+    # project = GsaProject(
+    #     reporter, gke.get_gsa(),
+    #     gke.get_ksa_string(),
+    #     gke.get_project(),
+    #     gke.get_check_status())
+    # project.check_gsa()
+    # project.check_gsa_enabled()
+    # project.check_gsa_iam_policy()
+    # project.check_gsa_ksa_workload_identity_user()
+
+    # reporter.print_report(gke, project)
 
 
 if __name__ == '__main__':
