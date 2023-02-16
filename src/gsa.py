@@ -6,6 +6,19 @@ from reporter import Reporter
 
 logger = logging.getLogger()
 
+
+def format_wi_user(user):
+    try:
+        match = re.search(r'\[([\w-]+/[\w-]+)\]$', user)
+    except TypeError:
+        match = None
+    if match:
+        namespace, ksa = match.group(1).split('/')
+        return '%s (Namespace: %s, KSA: %s)' % (user, namespace, ksa)
+    else:
+        return '%s (Namespace and KSA could not be determined - wrong binding?)' % user
+
+
 class GsaProject(object):
     """This class represents a GCP Project in which a GSA resides"""
 
@@ -41,7 +54,7 @@ class GsaProject(object):
         if self.gsa:
             logger.info('Google Service Account: "%s"' % self.gsa_link)
             logger.info('Has the following Workload Identity Users:\n%s' %
-                        '\n'.join(self.wi_users))
+                        '\n'.join(map(format_wi_user, self.wi_users)))
         else:
             logger.info('Google Service Account information could '
                         'not be determined, fix previous issues')
